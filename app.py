@@ -6,31 +6,25 @@ import seaborn as sns
 import streamlit as st
 
 # ------------------------------------------------
-# 1. 기본 설정 및 배포 환경을 고려한 폰트 강제 적용
+# 1. 기본 설정 및 폰트 객체 준비 (배포 환경 100% 호환)
 # ------------------------------------------------
 st.set_page_config(
     page_title='무역 분석 대시보드', page_icon='📊', layout='wide'
 )
 
-# 현재 스크립트(app.py)가 있는 절대 경로를 기준으로 폰트 경로 설정 (배포 시 필수)
+# 현재 스크립트(app.py) 경로 기준으로 폰트 파일 찾기
 current_dir = os.path.dirname(os.path.abspath(__file__))
 FONT_PATH = os.path.join(current_dir, 'Griun_Fromsol-Rg.ttf')
 
+# 전역 설정 및 폰트 프로퍼티 객체(font_prop) 생성
 if os.path.exists(FONT_PATH):
-    # 1. Matplotlib 폰트 매니저에 파일 직접 추가
     fm.fontManager.addfont(FONT_PATH)
-    font_prop = fm.FontProperties(fname=FONT_PATH)
+    font_prop = fm.FontProperties(fname=FONT_PATH) # 이 객체를 차트 그릴 때 강제 주입합니다.
     font_name = font_prop.get_name()
-    
-    # 2. Matplotlib 전역 설정
     plt.rcParams['font.family'] = font_name
     plt.rcParams['axes.unicode_minus'] = False
-    
-    # 3. Seaborn 테마 설정 후 한 번 더 폰트 강제 고정 (Seaborn의 덮어쓰기 방지)
-    sns.set_theme(style="whitegrid", rc={"font.family": font_name, "axes.unicode_minus": False})
-    plt.rc('font', family=font_name) 
 else:
-    st.error(f"❌ 폰트 파일을 찾을 수 없습니다.\n경로: {FONT_PATH}\n폰트 파일이 업로드 되었는지 확인해주세요.")
+    st.error(f"❌ 폰트 파일을 찾을 수 없습니다.\n경로: {FONT_PATH}")
     st.stop()
 
 
@@ -70,7 +64,6 @@ original_null_data.columns = ['컬럼명', '결측치 수']
 # ------------------------------------------------
 st.sidebar.header('🔍 필터 옵션')
 
-# 국가 선택
 countries = df['country_name'].unique().tolist()
 selected_countries = st.sidebar.multiselect(
     '국가 선택 (비워두면 전체)',
@@ -78,7 +71,6 @@ selected_countries = st.sidebar.multiselect(
     default=countries
 )
 
-# 무역액 등급 선택
 grades = ['대', '중', '소']
 selected_grades = st.sidebar.multiselect(
     '무역액 등급 선택',
@@ -99,13 +91,11 @@ if selected_grades:
 st.title('📈 무역 분석 대시보드')
 st.markdown('---')
 
-# 1. 데이터 결측치 현황
 st.subheader('1. 데이터 결측치 현황')
 st.dataframe(original_null_data.T, use_container_width=True)
 
 st.markdown('---')
 
-# 2. 전체 무역 요약 지표
 st.subheader('2. 전체 무역 요약 지표')
 col1, col2 = st.columns(2)
 with col1:
@@ -116,7 +106,6 @@ with col2:
 
 st.markdown('---')
 
-# 3. 국가별 연도별 수출액 히트맵 및 무역액 등급 분포
 st.subheader('3. 국가별 연도별 수출액 히트맵 및 무역액 등급 분포')
 col_a, col_b = st.columns(2)
 
@@ -131,8 +120,15 @@ with col_a:
         if not heatmap_data.empty:
             fig, ax = plt.subplots(figsize=(8, 5))
             sns.heatmap(heatmap_data, cmap='Blues', annot=True, fmt=',.0f', ax=ax)
-            ax.set_ylabel('국가명')
-            ax.set_xlabel('연도(t)')
+            
+            # [핵심] 차트의 모든 글씨에 폰트 객체(font_prop)를 직접 강제 적용
+            ax.set_title('상위 8개국 연도별 수출액', fontproperties=font_prop, pad=15)
+            ax.set_ylabel('국가명', fontproperties=font_prop)
+            ax.set_xlabel('연도(t)', fontproperties=font_prop)
+            
+            for label in ax.get_xticklabels() + ax.get_yticklabels():
+                label.set_fontproperties(font_prop)
+                
             st.pyplot(fig)
         else:
             st.info('조건에 맞는 데이터가 부족합니다.')
@@ -143,14 +139,22 @@ with col_b:
         grade_counts = filtered_df['trade_grade'].value_counts().reindex(['대', '중', '소'])
         fig, ax = plt.subplots(figsize=(8, 5))
         grade_counts.plot(kind='bar', color=['#ff9999', '#66b3ff', '#99ff99'], ax=ax)
-        ax.set_xlabel('무역액 등급')
-        ax.set_ylabel('건수')
+        
+        # 글씨 회전을 먼저 적용
         plt.xticks(rotation=0)
+        
+        # [핵심] 차트의 모든 글씨에 폰트 객체(font_prop)를 직접 강제 적용
+        ax.set_title('무역액 등급별 분포', fontproperties=font_prop, pad=15)
+        ax.set_xlabel('무역액 등급', fontproperties=font_prop)
+        ax.set_ylabel('건수', fontproperties=font_prop)
+        
+        for label in ax.get_xticklabels() + ax.get_yticklabels():
+            label.set_fontproperties(font_prop)
+            
         st.pyplot(fig)
 
 st.markdown('---')
 
-# 4. 상위 5개국 및 무역액 등급 교차표
 st.subheader('4. 상위 5개국 및 무역액 등급 교차표')
 if not filtered_df.empty:
     top_5_countries = filtered_df.groupby('country_name')['v'].sum().nlargest(5).index
