@@ -1,28 +1,35 @@
 import os
+import platform
+import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 import streamlit as st
 
-# 한글 폰트 설정 (시스템 환경에 따라 다를 수 있으므로 기본 설정 적용)
-plt.rcParams['font.family'] = 'Malgun Gothic'  # Windows의 경우
-plt.rcParams['axes.unicode_minus'] = False
-
-# 페이지 설정
+# 페이지 설정 (가장 먼저 호출되어야 함)
 st.set_page_config(
     page_title='무역 분석 대시보드', page_icon='📊', layout='wide'
 )
 
+# 운영체제별 한글 폰트 설정 및 캐시 비우기
+env_os = platform.system()
+if env_os == 'Windows':
+  plt.rcParams['font.family'] = 'Malgun Gothic'
+elif env_os == 'Darwin':  # Mac
+  plt.rcParams['font.family'] = 'AppleGothic'
+else:  # Linux (Streamlit Cloud 등)
+  plt.rcParams['font.family'] = 'NanumGothic'
 
-# 데이터 로드 함수 (파일 유무에 따른 예외 처리 추가)
+plt.rcParams['axes.unicode_minus'] = False  # 마이너스 부호 깨짐 방지
+
+
+# 데이터 로드 함수
 @st.cache_data
 def load_data():
-  # baci_85_sample.csv 파일 확인
   if not os.path.exists('baci_85_sample.csv'):
     raise FileNotFoundError('baci_85_sample.csv 파일을 찾을 수 없습니다.')
   baci_df = pd.read_csv('baci_85_sample.csv')
 
-  # country_codes_sample.csv 파일은 없을 경우 대체 데이터 생성 또는 무시
   if os.path.exists('country_codes_sample.csv'):
     country_df = pd.read_csv('country_codes_sample.csv')
   else:
@@ -68,7 +75,7 @@ if selected_grades and 'trade_grade' in baci.columns:
 st.title('📈 무역 분석 대시보드')
 st.markdown('---')
 
-# 2. baci_85_sample.csv 파일의 결측치
+# 1. baci_85_sample.csv 파일의 결측치
 st.subheader('1. 데이터 결측치 현황')
 null_data = baci.isnull().sum().reset_index()
 null_data.columns = ['컬럼명', '결측치 수']
@@ -76,7 +83,7 @@ st.dataframe(null_data.T, use_container_width=True)
 
 st.markdown('---')
 
-# 3. 총 거래건수 및 총 수출액(달러)
+# 2. 총 거래건수 및 총 수출액(달러)
 st.subheader('2. 전체 무역 요약 지표')
 total_transactions = len(baci)
 total_export = baci['v'].sum() if 'v' in baci.columns else 0
@@ -89,7 +96,7 @@ with col2:
 
 st.markdown('---')
 
-# 4. 국가*연도 수출액 히트맵(상위 8개국) & 무역액 등급분포 (두 열로 나누기)
+# 3. 국가*연도 수출액 히트맵(상위 8개국) & 무역액 등급분포 (두 열로 나누기)
 st.subheader('3. 국가별 연도별 수출액 히트맵 및 무역액 등급 분포')
 col_a, col_b = st.columns(2)
 
@@ -131,7 +138,7 @@ with col_b:
 
 st.markdown('---')
 
-# 5. 상위 5개국 * 무역액 등급 교차표 (원본건수 / 정규화비율)
+# 4. 상위 5개국 * 무역액 등급 교차표 (원본건수 / 정규화비율)
 st.subheader('4. 상위 5개국 및 무역액 등급 교차표')
 if 'i' in baci.columns and 'trade_grade' in baci.columns:
   top_5_countries = (
