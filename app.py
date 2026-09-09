@@ -6,159 +6,156 @@ import pandas as pd
 import seaborn as sns
 import streamlit as st
 
-# 페이지 설정 (가장 먼저 호출되어야 함)
+# ------------------------------------------------
+# 1. 기본 설정 및 폰트 설정
+# ------------------------------------------------
 st.set_page_config(
     page_title='무역 분석 대시보드', page_icon='📊', layout='wide'
 )
 
-# 운영체제별 한글 폰트 설정 및 캐시 비우기
+# 운영체제별 한글 폰트 설정 (글씨 깨짐 방지)
 env_os = platform.system()
 if env_os == 'Windows':
-  plt.rcParams['font.family'] = 'Malgun Gothic'
+    plt.rcParams['font.family'] = 'Malgun Gothic'
 elif env_os == 'Darwin':  # Mac
-  plt.rcParams['font.family'] = 'AppleGothic'
+    plt.rcParams['font.family'] = 'AppleGothic'
 else:  # Linux (Streamlit Cloud 등)
-  plt.rcParams['font.family'] = 'NanumGothic'
+    plt.rcParams['font.family'] = 'NanumGothic'
 
 plt.rcParams['axes.unicode_minus'] = False  # 마이너스 부호 깨짐 방지
 
-
-# 데이터 로드 함수
+# ------------------------------------------------
+# 2. 데이터 로드 및 전처리
+# ------------------------------------------------
 @st.cache_data
 def load_data():
-  if not os.path.exists('baci_85_sample.csv'):
-    raise FileNotFoundError('baci_85_sample.csv 파일을 찾을 수 없습니다.')
-  baci_df = pd.read_csv('baci_85_sample.csv')
+    # 파일 로드 (제공된 파일명에 정확히 맞춤)
+    if not os.path.exists('baci_85_sample.csv'):
+        st.error("'baci_85_sample.csv' 파일이 없습니다.")
+        st.stop()
+    if not os.path.exists('country_codes_sample (1).csv'):
+        st.error("'country_codes_sample (1).csv' 파일이 없습니다.")
+        st.stop()
 
-  if os.path.exists('country_codes_sample.csv'):
-    country_df = pd.read_csv('country_codes_sample.csv')
-  else:
-    country_df = pd.DataFrame(columns=['country_code', 'country_name'])
+    baci_df = pd.read_csv('baci_85_sample.csv')
+    country_df = pd.read_csv('country_codes_sample (1).csv')
 
-  return baci_df, country_df
+    # 'j' 컬럼(상대 국가 코드) 기준으로 국가 이름 병합
+    df = pd.merge(baci_df, country_df, on='j', how='left')
+    df['country_name'] = df['country_name'].fillna('Unknown')
 
+    # 무역액(v) 기준 등급 생성 (대, 중, 소)
+    if 'v' in df.columns:
+        # 3분위수로 나누어 등급 할당
+        df['trade_grade'] = pd.qcut(df['v'], q=3, labels=['소', '중', '대'], duplicates='drop')
+    
+    return df
 
-try:
-  baci, country_codes = load_data()
-except FileNotFoundError as e:
-  st.error(f'필요한 데이터 파일 오류: {e}')
-  st.stop()
+df = load_data()
+# baci_85_sample.csv 원본 결측치 계산 (병합 전 원본 기준)
+original_null_data = pd.read_csv('baci_85_sample.csv').isnull().sum().reset_index()
+original_null_data.columns = ['컬럼명', '결측치 수']
 
-# 사이드바 설정
+# ------------------------------------------------
+# 3. 사이드바 필터 구성
+# ------------------------------------------------
 st.sidebar.header('🔍 필터 옵션')
 
-# 국가 선택 (컬럼 'i'가 존재할 때)
-if 'i' in baci.columns:
-  unique_countries = baci['i'].unique()
-  selected_countries = st.sidebar.multiselect(
-      '국가 선택 (비워두면 전체)',
-      options=unique_countries,
-      default=unique_countries[: min(5, len(unique_countries))],
-  )
-  if selected_countries:
-    baci = baci[baci['i'].isin(selected_countries)]
+# 국가 선택
+countries = df['country_name'].unique().tolist()
+selected_countries = st.sidebar.multiselect(
+    '국가 선택 (비워두면 전체)',
+    options=countries,
+    default=countries
+)
 
-# 무역액 등급 선택 (대, 중, 소)
-if 'v' in baci.columns:
-  baci['trade_grade'] = pd.qcut(baci['v'], q=3, labels=['소', '중', '대'])
-elif 'trade_grade' not in baci.columns:
-  baci['trade_grade'] = '중'
-
+# 무역액 등급 선택
 grades = ['대', '중', '소']
 selected_grades = st.sidebar.multiselect(
-    '무역액 등급 선택', options=grades, default=grades
+    '무역액 등급 선택',
+    options=grades,
+    default=grades
 )
-if selected_grades and 'trade_grade' in baci.columns:
-  baci = baci[baci['trade_grade'].isin(selected_grades)]
 
-# --- 오른쪽 화면 구성 ---
+# 필터링 적용
+filtered_df = df.copy()
+if selected_countries:
+    filtered_df = filtered_df[filtered_df['country_name'].isin(selected_countries)]
+if selected_grades:
+    filtered_df = filtered_df[filtered_df['trade_grade'].isin(selected_grades)]
+
+# ------------------------------------------------
+# 4. 오른쪽 메인 화면 구성
+# ------------------------------------------------
 st.title('📈 무역 분석 대시보드')
 st.markdown('---')
 
-# 1. baci_85_sample.csv 파일의 결측치
-st.subheader('1. 데이터 결측치 현황')
-null_data = baci.isnull().sum().reset_index()
-null_data.columns = ['컬럼명', '결측치 수']
-st.dataframe(null_data.T, use_container_width=True)
+# [요구사항 2] baci_85_sample.csv 파일의 결측치
+st.subheader('1. 데이터 결측치 현황 (baci_85_sample.csv 원본)')
+st.dataframe(original_null_data.T, use_container_width=True)
 
 st.markdown('---')
 
-# 2. 총 거래건수 및 총 수출액(달러)
+# [요구사항 3] 총 거래건수 및 총 수출액(달러)
 st.subheader('2. 전체 무역 요약 지표')
-total_transactions = len(baci)
-total_export = baci['v'].sum() if 'v' in baci.columns else 0
-
 col1, col2 = st.columns(2)
 with col1:
-  st.metric(label='총 거래 건수', value=f'{total_transactions:,} 건')
+    st.metric(label='총 거래 건수', value=f'{len(filtered_df):,} 건')
 with col2:
-  st.metric(label='총 수출액 (달러)', value=f'${total_export:,.2f}')
+    total_export = filtered_df['v'].sum() if 'v' in filtered_df.columns else 0
+    st.metric(label='총 수출액 (달러)', value=f'${total_export:,.2f}')
 
 st.markdown('---')
 
-# 3. 국가*연도 수출액 히트맵(상위 8개국) & 무역액 등급분포 (두 열로 나누기)
+# [요구사항 4] 국가*연도 수출액 히트맵 & 무역액 등급분포 (두 열로 분리)
 st.subheader('3. 국가별 연도별 수출액 히트맵 및 무역액 등급 분포')
 col_a, col_b = st.columns(2)
 
 with col_a:
-  st.markdown('**상위 8개국 국가*연도 수출액 히트맵**')
-  if (
-      'i' in baci.columns
-      and 't' in baci.columns
-      and 'v' in baci.columns
-  ):
-    top_8_countries = baci.groupby('i')['v'].sum().nlargest(8).index
-    heatmap_data = baci[baci['i'].isin(top_8_countries)].pivot_table(
-        index='i', columns='t', values='v', aggfunc='sum', fill_value=0
-    )
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-    sns.heatmap(heatmap_data, cmap='Blues', annot=True, fmt=',.0f', ax=ax)
-    ax.set_title('상위 8개국 연도별 수출액')
-    ax.set_xlabel('연도 (t)')
-    ax.set_ylabel('국가 코드 (i)')
-    st.pyplot(fig)
-  else:
-    st.info('히트맵을 위한 필수 컬럼(i, t, v)이 부족합니다.')
+    st.markdown('**상위 8개국 국가*연도 수출액 히트맵**')
+    if not filtered_df.empty:
+        # 수출액(v) 기준 상위 8개 국가 선정
+        top_8_countries = filtered_df.groupby('country_name')['v'].sum().nlargest(8).index
+        heatmap_data = filtered_df[filtered_df['country_name'].isin(top_8_countries)].pivot_table(
+            index='country_name', columns='t', values='v', aggfunc='sum', fill_value=0
+        )
+        
+        if not heatmap_data.empty:
+            fig, ax = plt.subplots(figsize=(8, 5))
+            sns.heatmap(heatmap_data, cmap='Blues', annot=True, fmt=',.0f', ax=ax)
+            ax.set_ylabel('국가')
+            ax.set_xlabel('연도(t)')
+            st.pyplot(fig)
+        else:
+            st.info('조건에 맞는 데이터가 부족합니다.')
 
 with col_b:
-  st.markdown('**무역액 등급 분포**')
-  if 'trade_grade' in baci.columns:
-    grade_counts = baci['trade_grade'].value_counts()
-    fig, ax = plt.subplots(figsize=(8, 5))
-    grade_counts.plot(
-        kind='bar', color=['#ff9999', '#66b3ff', '#99ff99'], ax=ax
-    )
-    ax.set_title('무역액 등급별 분포')
-    ax.set_xlabel('무역액 등급')
-    ax.set_ylabel('건수')
-    st.pyplot(fig)
-  else:
-    st.info('등급 분포를 표시할 수 없습니다.')
+    st.markdown('**무역액 등급 분포**')
+    if not filtered_df.empty:
+        grade_counts = filtered_df['trade_grade'].value_counts().reindex(['대', '중', '소'])
+        fig, ax = plt.subplots(figsize=(8, 5))
+        grade_counts.plot(kind='bar', color=['#ff9999', '#66b3ff', '#99ff99'], ax=ax)
+        ax.set_xlabel('무역액 등급')
+        ax.set_ylabel('건수')
+        plt.xticks(rotation=0)
+        st.pyplot(fig)
 
 st.markdown('---')
 
-# 4. 상위 5개국 * 무역액 등급 교차표 (원본건수 / 정규화비율)
+# [요구사항 5] 상위 5개국 * 무역액 등급 교차표 (원본건수 / 정규화비율)
 st.subheader('4. 상위 5개국 및 무역액 등급 교차표')
-if 'i' in baci.columns and 'trade_grade' in baci.columns:
-  top_5_countries = (
-      baci.groupby('i')['v'].sum().nlargest(5).index
-      if 'v' in baci.columns
-      else baci['i'].value_counts().head(5).index
-  )
-  filtered_cross_df = baci[baci['i'].isin(top_5_countries)]
-
-  cross_count = pd.crosstab(
-      filtered_cross_df['i'], filtered_cross_df['trade_grade']
-  )
-  cross_norm = pd.crosstab(
-      filtered_cross_df['i'], filtered_cross_df['trade_grade'], normalize='index'
-  )
-
-  st.markdown('##### 📌 원본 건수 교차표')
-  st.dataframe(cross_count, use_container_width=True)
-
-  st.markdown('##### 📌 정규화 비율 교차표 (행 기준)')
-  st.dataframe(cross_norm.style.format('{:.2%}'), use_container_width=True)
-else:
-  st.info('교차표를 생성하기 위한 데이터 컬럼이 부족합니다.')
+if not filtered_df.empty:
+    top_5_countries = filtered_df.groupby('country_name')['v'].sum().nlargest(5).index
+    cross_df = filtered_df[filtered_df['country_name'].isin(top_5_countries)]
+    
+    if not cross_df.empty:
+        # 원본 건수 교차표
+        cross_count = pd.crosstab(cross_df['country_name'], cross_df['trade_grade'])
+        # 정규화 비율 교차표
+        cross_norm = pd.crosstab(cross_df['country_name'], cross_df['trade_grade'], normalize='index')
+        
+        st.markdown('##### 📌 원본 건수 교차표')
+        st.dataframe(cross_count, use_container_width=True)
+        
+        st.markdown('##### 📌 정규화 비율 교차표 (행 기준)')
+        st.dataframe(cross_norm.style.format('{:.2%}'), use_container_width=True)
