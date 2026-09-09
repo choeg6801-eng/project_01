@@ -1,5 +1,4 @@
 import os
-import platform
 import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -7,29 +6,39 @@ import seaborn as sns
 import streamlit as st
 
 # ------------------------------------------------
-# 1. 기본 설정 및 폰트 설정
+# 1. 기본 설정 및 배포 환경을 고려한 폰트 강제 적용
 # ------------------------------------------------
 st.set_page_config(
     page_title='무역 분석 대시보드', page_icon='📊', layout='wide'
 )
 
-# 운영체제별 한글 폰트 설정 (글씨 깨짐 방지)
-env_os = platform.system()
-if env_os == 'Windows':
-    plt.rcParams['font.family'] = 'Malgun Gothic'
-elif env_os == 'Darwin':  # Mac
-    plt.rcParams['font.family'] = 'AppleGothic'
-else:  # Linux (Streamlit Cloud 등)
-    plt.rcParams['font.family'] = 'NanumGothic'
+# 현재 스크립트(app.py)가 있는 절대 경로를 기준으로 폰트 경로 설정 (배포 시 필수)
+current_dir = os.path.dirname(os.path.abspath(__file__))
+FONT_PATH = os.path.join(current_dir, 'Griun_Fromsol-Rg.ttf')
 
-plt.rcParams['axes.unicode_minus'] = False  # 마이너스 부호 깨짐 방지
+if os.path.exists(FONT_PATH):
+    # 1. Matplotlib 폰트 매니저에 파일 직접 추가
+    fm.fontManager.addfont(FONT_PATH)
+    font_prop = fm.FontProperties(fname=FONT_PATH)
+    font_name = font_prop.get_name()
+    
+    # 2. Matplotlib 전역 설정
+    plt.rcParams['font.family'] = font_name
+    plt.rcParams['axes.unicode_minus'] = False
+    
+    # 3. Seaborn 테마 설정 후 한 번 더 폰트 강제 고정 (Seaborn의 덮어쓰기 방지)
+    sns.set_theme(style="whitegrid", rc={"font.family": font_name, "axes.unicode_minus": False})
+    plt.rc('font', family=font_name) 
+else:
+    st.error(f"❌ 폰트 파일을 찾을 수 없습니다.\n경로: {FONT_PATH}\n폰트 파일이 업로드 되었는지 확인해주세요.")
+    st.stop()
+
 
 # ------------------------------------------------
 # 2. 데이터 로드 및 전처리
 # ------------------------------------------------
 @st.cache_data
 def load_data():
-    # 파일 로드 (제공된 파일명에 정확히 맞춤)
     if not os.path.exists('baci_85_sample.csv'):
         st.error("'baci_85_sample.csv' 파일이 없습니다.")
         st.stop()
@@ -40,19 +49,19 @@ def load_data():
     baci_df = pd.read_csv('baci_85_sample.csv')
     country_df = pd.read_csv('country_codes_sample (1).csv')
 
-    # 'j' 컬럼(상대 국가 코드) 기준으로 국가 이름 병합
+    # 'j' 컬럼(국가 코드) 기준으로 국가 이름 병합
     df = pd.merge(baci_df, country_df, on='j', how='left')
     df['country_name'] = df['country_name'].fillna('Unknown')
 
     # 무역액(v) 기준 등급 생성 (대, 중, 소)
     if 'v' in df.columns:
-        # 3분위수로 나누어 등급 할당
         df['trade_grade'] = pd.qcut(df['v'], q=3, labels=['소', '중', '대'], duplicates='drop')
     
     return df
 
 df = load_data()
-# baci_85_sample.csv 원본 결측치 계산 (병합 전 원본 기준)
+
+# baci_85_sample.csv 원본 결측치 계산
 original_null_data = pd.read_csv('baci_85_sample.csv').isnull().sum().reset_index()
 original_null_data.columns = ['컬럼명', '결측치 수']
 
@@ -90,13 +99,13 @@ if selected_grades:
 st.title('📈 무역 분석 대시보드')
 st.markdown('---')
 
-# [요구사항 2] baci_85_sample.csv 파일의 결측치
-st.subheader('1. 데이터 결측치 현황 (baci_85_sample.csv 원본)')
+# 1. 데이터 결측치 현황
+st.subheader('1. 데이터 결측치 현황')
 st.dataframe(original_null_data.T, use_container_width=True)
 
 st.markdown('---')
 
-# [요구사항 3] 총 거래건수 및 총 수출액(달러)
+# 2. 전체 무역 요약 지표
 st.subheader('2. 전체 무역 요약 지표')
 col1, col2 = st.columns(2)
 with col1:
@@ -107,14 +116,13 @@ with col2:
 
 st.markdown('---')
 
-# [요구사항 4] 국가*연도 수출액 히트맵 & 무역액 등급분포 (두 열로 분리)
+# 3. 국가별 연도별 수출액 히트맵 및 무역액 등급 분포
 st.subheader('3. 국가별 연도별 수출액 히트맵 및 무역액 등급 분포')
 col_a, col_b = st.columns(2)
 
 with col_a:
     st.markdown('**상위 8개국 국가*연도 수출액 히트맵**')
     if not filtered_df.empty:
-        # 수출액(v) 기준 상위 8개 국가 선정
         top_8_countries = filtered_df.groupby('country_name')['v'].sum().nlargest(8).index
         heatmap_data = filtered_df[filtered_df['country_name'].isin(top_8_countries)].pivot_table(
             index='country_name', columns='t', values='v', aggfunc='sum', fill_value=0
@@ -123,7 +131,7 @@ with col_a:
         if not heatmap_data.empty:
             fig, ax = plt.subplots(figsize=(8, 5))
             sns.heatmap(heatmap_data, cmap='Blues', annot=True, fmt=',.0f', ax=ax)
-            ax.set_ylabel('국가')
+            ax.set_ylabel('국가명')
             ax.set_xlabel('연도(t)')
             st.pyplot(fig)
         else:
@@ -142,16 +150,14 @@ with col_b:
 
 st.markdown('---')
 
-# [요구사항 5] 상위 5개국 * 무역액 등급 교차표 (원본건수 / 정규화비율)
+# 4. 상위 5개국 및 무역액 등급 교차표
 st.subheader('4. 상위 5개국 및 무역액 등급 교차표')
 if not filtered_df.empty:
     top_5_countries = filtered_df.groupby('country_name')['v'].sum().nlargest(5).index
     cross_df = filtered_df[filtered_df['country_name'].isin(top_5_countries)]
     
     if not cross_df.empty:
-        # 원본 건수 교차표
         cross_count = pd.crosstab(cross_df['country_name'], cross_df['trade_grade'])
-        # 정규화 비율 교차표
         cross_norm = pd.crosstab(cross_df['country_name'], cross_df['trade_grade'], normalize='index')
         
         st.markdown('##### 📌 원본 건수 교차표')
