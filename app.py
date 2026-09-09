@@ -118,22 +118,20 @@ if selected_grades:
 pochacco_path = os.path.join(current_dir, 'pochacco.png') # 확장자가 jpg라면 'pochacco.jpg'로 변경
 
 if os.path.exists(pochacco_path):
+    # 이미지를 텍스트와 나란히 두기 위해 HTML + Base64 활용
     with open(pochacco_path, "rb") as f:
         img_base64 = base64.b64encode(f.read()).decode()
     
-    # 1. 텍스트를 먼저 배치하고, 이미지를 뒤로 보냄
-    # 2. width를 100으로 키움 (원하는 크기로 조절 가능)
-    # 3. margin-left를 주어 텍스트와 이미지 사이 간격 확보
+    # flex를 이용해 이미지와 텍스트의 세로 중앙 정렬을 맞춤
     title_html = f"""
     <h1 style="display: flex; align-items: center; margin-bottom: 0;">
+        <img src="data:image/png;base64,{img_base64}" width="55" style="margin-right: 15px; border-radius: 10px;">
         무역 분석 대시보드
-        <img src="data:image/png;base64,{img_base64}" width="100" style="margin-left: 20px; border-radius: 10px;">
     </h1>
     """
     st.markdown(title_html, unsafe_allow_html=True)
 else:
-    st.title('무역 분석 대시보드 🐶')
-
+    st.title('🐶 무역 분석 대시보드') # 이미지가 없을 때의 대체 타이틀
 
 st.markdown('---')
 
