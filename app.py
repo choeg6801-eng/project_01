@@ -1,4 +1,5 @@
 import os
+import base64
 import matplotlib.font_manager as fm
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -6,23 +7,53 @@ import seaborn as sns
 import streamlit as st
 
 # ------------------------------------------------
-# 1. 기본 설정 및 폰트 객체 준비 (배포 환경 100% 호환)
+# 1. 기본 설정 및 배포 환경을 고려한 폰트 강제 적용
 # ------------------------------------------------
 st.set_page_config(
     page_title='무역 분석 대시보드', page_icon='📊', layout='wide'
 )
 
-# 현재 스크립트(app.py) 경로 기준으로 폰트 파일 찾기
 current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# --- 배경 이미지 설정 함수 ---
+def set_background(image_file):
+    image_path = os.path.join(current_dir, image_file)
+    if os.path.exists(image_path):
+        with open(image_path, "rb") as f:
+            encoded_string = base64.b64encode(f.read()).decode()
+        
+        # linear-gradient를 사용해 이미지 위에 50% 투명도(rgba의 0.5)의 흰색 레이어를 덮어씌움
+        # 이렇게 해야 글자나 차트가 투명해지는 것을 막고 배경만 흐릿해집니다.
+        css = f"""
+        <style>
+        .stApp {{
+            background-image: linear-gradient(rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.5)), url("data:image/jpeg;base64,{encoded_string}");
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+        }}
+        </style>
+        """
+        st.markdown(css, unsafe_allow_html=True)
+    else:
+        st.warning(f"⚠️ 배경 이미지 파일을 찾을 수 없습니다: {image_file}")
+
+# 배경 이미지 적용 (파일명을 container.jpg로 맞췄다고 가정)
+set_background('container.jpg')
+
+# --- 폰트 설정 ---
 FONT_PATH = os.path.join(current_dir, 'Griun_Fromsol-Rg.ttf')
 
-# 전역 설정 및 폰트 프로퍼티 객체(font_prop) 생성
 if os.path.exists(FONT_PATH):
     fm.fontManager.addfont(FONT_PATH)
-    font_prop = fm.FontProperties(fname=FONT_PATH) # 이 객체를 차트 그릴 때 강제 주입합니다.
+    font_prop = fm.FontProperties(fname=FONT_PATH)
     font_name = font_prop.get_name()
+    
     plt.rcParams['font.family'] = font_name
     plt.rcParams['axes.unicode_minus'] = False
+    
+    sns.set_theme(style="whitegrid", rc={"font.family": font_name, "axes.unicode_minus": False})
+    plt.rc('font', family=font_name) 
 else:
     st.error(f"❌ 폰트 파일을 찾을 수 없습니다.\n경로: {FONT_PATH}")
     st.stop()
@@ -43,11 +74,9 @@ def load_data():
     baci_df = pd.read_csv('baci_85_sample.csv')
     country_df = pd.read_csv('country_codes_sample (1).csv')
 
-    # 'j' 컬럼(국가 코드) 기준으로 국가 이름 병합
     df = pd.merge(baci_df, country_df, on='j', how='left')
     df['country_name'] = df['country_name'].fillna('Unknown')
 
-    # 무역액(v) 기준 등급 생성 (대, 중, 소)
     if 'v' in df.columns:
         df['trade_grade'] = pd.qcut(df['v'], q=3, labels=['소', '중', '대'], duplicates='drop')
     
@@ -55,7 +84,6 @@ def load_data():
 
 df = load_data()
 
-# baci_85_sample.csv 원본 결측치 계산
 original_null_data = pd.read_csv('baci_85_sample.csv').isnull().sum().reset_index()
 original_null_data.columns = ['컬럼명', '결측치 수']
 
@@ -78,7 +106,6 @@ selected_grades = st.sidebar.multiselect(
     default=grades
 )
 
-# 필터링 적용
 filtered_df = df.copy()
 if selected_countries:
     filtered_df = filtered_df[filtered_df['country_name'].isin(selected_countries)]
@@ -121,7 +148,6 @@ with col_a:
             fig, ax = plt.subplots(figsize=(8, 5))
             sns.heatmap(heatmap_data, cmap='Blues', annot=True, fmt=',.0f', ax=ax)
             
-            # [핵심] 차트의 모든 글씨에 폰트 객체(font_prop)를 직접 강제 적용
             ax.set_title('상위 8개국 연도별 수출액', fontproperties=font_prop, pad=15)
             ax.set_ylabel('국가명', fontproperties=font_prop)
             ax.set_xlabel('연도(t)', fontproperties=font_prop)
@@ -140,10 +166,8 @@ with col_b:
         fig, ax = plt.subplots(figsize=(8, 5))
         grade_counts.plot(kind='bar', color=['#ff9999', '#66b3ff', '#99ff99'], ax=ax)
         
-        # 글씨 회전을 먼저 적용
         plt.xticks(rotation=0)
         
-        # [핵심] 차트의 모든 글씨에 폰트 객체(font_prop)를 직접 강제 적용
         ax.set_title('무역액 등급별 분포', fontproperties=font_prop, pad=15)
         ax.set_xlabel('무역액 등급', fontproperties=font_prop)
         ax.set_ylabel('건수', fontproperties=font_prop)
