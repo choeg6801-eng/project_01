@@ -115,7 +115,24 @@ if selected_grades:
 # ------------------------------------------------
 # 4. 오른쪽 메인 화면 구성
 # ------------------------------------------------
-st.title('📈 무역 분석 대시보드')
+pochacco_path = os.path.join(current_dir, 'pochacco.png') # 확장자가 jpg라면 'pochacco.jpg'로 변경
+
+if os.path.exists(pochacco_path):
+    # 이미지를 텍스트와 나란히 두기 위해 HTML + Base64 활용
+    with open(pochacco_path, "rb") as f:
+        img_base64 = base64.b64encode(f.read()).decode()
+    
+    # flex를 이용해 이미지와 텍스트의 세로 중앙 정렬을 맞춤
+    title_html = f"""
+    <h1 style="display: flex; align-items: center; margin-bottom: 0;">
+        <img src="data:image/png;base64,{img_base64}" width="55" style="margin-right: 15px; border-radius: 10px;">
+        무역 분석 대시보드
+    </h1>
+    """
+    st.markdown(title_html, unsafe_allow_html=True)
+else:
+    st.title('🐶 무역 분석 대시보드') # 이미지가 없을 때의 대체 타이틀
+
 st.markdown('---')
 
 st.subheader('1. 데이터 결측치 현황')
